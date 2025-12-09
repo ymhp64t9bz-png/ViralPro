@@ -1,149 +1,145 @@
 """
-🔥 StoryForge AI - Handler de Produção (RunPod Serverless)
-Pipeline: Topic -> Math Script -> Edge TTS (Async) -> MoviePy Video
+HANDLER.PY - KWAICUT SERVERLESS
+================================
+RunPod Serverless Handler para cortes automáticos de vídeo
 """
 
 import runpod
 import os
-import asyncio
-import logging
-import time
-import random
-import edge_tts
+import sys
+import json
+import tempfile
+import requests
+from pathlib import Path
 
-# Imports de Mídia
-from moviepy.editor import (
-    AudioFileClip, TextClip, ColorClip, CompositeVideoClip
-)
-from moviepy.config import change_settings
+# Configuração de caminhos
+VOLUME_PATH = os.getenv("RUNPOD_VOLUME_PATH", "/runpod-volume")
+MODELS_PATH = os.path.join(VOLUME_PATH, "models")
+TEMP_PATH = os.path.join(VOLUME_PATH, "temp")
 
-# Configurações Críticas para Docker
-change_settings({"IMAGEMAGICK_BINARY": "/usr/bin/convert"})
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("StoryForge-Cloud")
+sys.path.insert(0, "/app/core")
 
-# Diretórios
-OUTPUT_DIR = "/app/output"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+from core.video_processing.scene_extractor import extract_scenes_from_whisper
+from core.ai_services.local_ai_service import transcribe_audio_batch
+from moviepy.editor import VideoFileClip
 
-# ---------------------------------------------------------------------------- #
-#                                LÓGICA DE NEGÓCIO                             #
-# ---------------------------------------------------------------------------- #
-
-def generate_script_logic(topic, duration_seconds):
-    """Gera roteiro respeitando a duração (2.5 palavras/segundo)."""
-    target_words = int(duration_seconds * 2.5)
-    logger.info(f"📝 Topic: {topic} | Duração: {duration_seconds}s | Alvo: {target_words} palavras")
+def download_file(url, dest_path):
+    """Download de arquivo via URL"""
+    response = requests.get(url, stream=True)
+    response.raise_for_status()
     
-    intro = f"Hoje vamos falar sobre {topic}. "
-    fillers = [
-        "Isso é algo que muda tudo.", "A ciência por trás disso é fascinante.",
-        f"Muitos não sabem a verdade sobre {topic}.", "Imagine as possibilidades.",
-        "Os detalhes são surpreendentes.", "Isso impacta nossa vida diariamente."
-    ]
+    with open(dest_path, 'wb') as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
     
-    text = intro
-    while len(text.split()) < target_words:
-        text += random.choice(fillers) + " "
-        
-    words = text.split()[:target_words]
-    final_text = " ".join(words)
-    return final_text
+    return dest_path
 
-async def generate_voice_pure_async(text, voice):
+def process_kwai_cuts(input_data):
     """
-    Gera áudio MP3 usando Edge TTS de forma puramente assíncrona.
-    Adequado para handlers async como o do RunPod.
+    Processa vídeo para cortes automáticos
+    
+    Input esperado:
+    {
+        "video_url": "https://...",
+        "config": {
+            "max_clips": 10,
+            "min_duration": 10,
+            "max_duration": 60,
+            "threshold": 30.0
+        }
+    }
     """
-    filename = f"audio_{int(time.time())}_{random.randint(1000,9999)}.mp3"
-    filepath = os.path.join(OUTPUT_DIR, filename)
-    
-    communicate = edge_tts.Communicate(text, voice)
-    await communicate.save(filepath)
-    
-    logger.info(f"🎙️ Áudio salvo: {filepath}")
-    return filepath
-
-def generate_video_render(audio_path, topic):
-    """Renderiza MP4 com fundo e legendas (CPU Bound)."""
-    logger.info("🎬 Renderizando vídeo...")
-    filename = f"video_{int(time.time())}_{random.randint(1000,9999)}.mp4"
-    output_path = os.path.join(OUTPUT_DIR, filename)
-    
-    audio = AudioFileClip(audio_path)
-    dur = audio.duration
-    
-    bg = ColorClip(size=(1080, 1920), color=(10, 20, 40), duration=dur)
-    
     try:
-        font_name = 'DejaVu-Sans-Bold'
-    except:
-        font_name = 'Arial'
+        os.makedirs(TEMP_PATH, exist_ok=True)
+        temp_dir = tempfile.mkdtemp(dir=TEMP_PATH)
         
-    txt = TextClip(
-        topic.upper(), 
-        fontsize=80, 
-        color='white', 
-        font=font_name, 
-        size=(900, None), 
-        method='caption'
-    ).set_position('center').set_duration(dur)
-    
-    final = CompositeVideoClip([bg, txt]).set_audio(audio)
-    
-    final.write_videofile(
-        output_path, 
-        fps=24, 
-        codec='libx264', 
-        audio_codec='aac',
-        preset='ultrafast',
-        threads=4,
-        logger=None
-    )
-    
-    return output_path
-
-# ---------------------------------------------------------------------------- #
-#                                RUNPOD HANDLER                                #
-# ---------------------------------------------------------------------------- #
-
-async def handler(job):
-    """
-    Handler ASSÍNCRONO nativo.
-    Usa 'await' diretamente para IO-bound tasks.
-    NÃO usa threads nem asyncio.run().
-    """
-    job_input = job.get("input", {})
-    
-    topic = job_input.get("topic", "Tecnologia")
-    duration = int(job_input.get("duration", 30))
-    voice = job_input.get("voice", "pt-BR-AntonioNeural")
-    
-    try:
-        logger.info(f"🚀 Job Start: {topic}")
+        # Download do vídeo
+        video_url = input_data.get("video_url")
+        if not video_url:
+            return {"error": "video_url é obrigatório"}
         
-        # 1. Roteiro (Síncrono/CPU)
-        script = generate_script_logic(topic, duration)
+        video_path = os.path.join(temp_dir, "input_video.mp4")
+        print(f"[HANDLER] Baixando vídeo de {video_url}...")
+        download_file(video_url, video_path)
         
-        # 2. Voz (Assíncrono/IO - await direto)
-        audio_path = await generate_voice_pure_async(script, voice)
+        # Configurações
+        config = input_data.get("config", {})
+        max_clips = config.get("max_clips", 10)
+        min_duration = config.get("min_duration", 10)
+        max_duration = config.get("max_duration", 60)
+        threshold = config.get("threshold", 30.0)
         
-        # 3. Vídeo (Síncrono/CPU)
-        video_path = generate_video_render(audio_path, topic)
+        # 1. Transcrição
+        print("[HANDLER] Transcrevendo áudio...")
+        whisper_result = transcribe_audio_batch(video_path)
+        
+        # 2. Detecção de cenas
+        print("[HANDLER] Detectando cenas...")
+        scenes = extract_scenes_from_whisper(whisper_result, video_path)
+        
+        # 3. Filtra por duração
+        filtered_scenes = []
+        for scene in scenes:
+            duration = scene["end"] - scene["start"]
+            if min_duration <= duration <= max_duration:
+                filtered_scenes.append(scene)
+        
+        # Limita ao máximo
+        filtered_scenes = filtered_scenes[:max_clips]
+        
+        # 4. Extrai clips
+        print("[HANDLER] Extraindo clips...")
+        output_dir = os.path.join(temp_dir, "outputs")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        video = VideoFileClip(video_path)
+        results = []
+        
+        for idx, scene in enumerate(filtered_scenes, 1):
+            output_path = os.path.join(output_dir, f"clip_{idx}.mp4")
+            
+            # Extrai subclip
+            subclip = video.subclip(scene["start"], scene["end"])
+            subclip.write_videofile(
+                output_path,
+                codec="libx264",
+                audio_codec="aac",
+                temp_audiofile=os.path.join(temp_dir, f"temp_audio_{idx}.m4a"),
+                remove_temp=True,
+                logger=None
+            )
+            
+            results.append({
+                "clip_number": idx,
+                "start": scene["start"],
+                "end": scene["end"],
+                "duration": scene["end"] - scene["start"],
+                "text": scene.get("text", ""),
+                "local_path": output_path,
+                "upload_url": None
+            })
+        
+        video.close()
         
         return {
             "status": "success",
-            "video_path": video_path,
-            "metadata": {
-                "script_length": len(script.split()),
-                "duration": duration,
-                "voice": voice
-            }
+            "total_clips": len(results),
+            "clips": results
         }
         
     except Exception as e:
-        logger.error(f"❌ Erro Fatal: {e}")
-        return {"status": "error", "error": str(e)}
+        import traceback
+        return {
+            "status": "error",
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+def handler(event):
+    """RunPod Handler principal"""
+    input_data = event.get("input", {})
+    result = process_kwai_cuts(input_data)
+    return result
 
 if __name__ == "__main__":
     runpod.serverless.start({"handler": handler})
