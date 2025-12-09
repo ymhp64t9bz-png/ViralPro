@@ -1,32 +1,23 @@
-# RunPod Serverless - ViralPro (WHISPER FIX)
 FROM runpod/pytorch:2.0.1-py3.10-cuda11.8.0-devel-ubuntu22.04
 
-RUN apt-get update && apt-get install -y \
-    default-jre \
-    ffmpeg \
-    git \
-    fonts-liberation \
-    wget \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV IMAGEMAGICK_BINARY=/usr/bin/convert
+ENV PYTHONPATH=/app
 
 WORKDIR /app
 
-COPY requirements.txt .
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg imagemagick libsndfile1 git wget curl \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# INSTALAÇÃO ROBUSTA
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118 && \
-    pip install --no-cache-dir faster-whisper ctranslate2 && \
-    pip install --no-cache-dir -r requirements.txt
+RUN sed -i 's/none/read,write/g' /etc/ImageMagick-6/policy.xml
 
-COPY core/ ./core/
-COPY fontes/ ./fontes/
-COPY handler.py .
+COPY requirements.txt /app/requirements.txt
+RUN python3 -m pip install --no-cache-dir -r /app/requirements.txt
 
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app:$PYTHONPATH
-ENV ADOBE_FONT_PATH=/app/fontes
-ENV RUNPOD_VOLUME_PATH=/runpod-volume
+COPY . /app/
 
-CMD ["python", "-u", "/app/handler.py"]
+RUN mkdir -p /app/output /app/temp
+
+CMD [ "python3", "-u", "/app/handler.py" ]
