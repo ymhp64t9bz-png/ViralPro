@@ -1,0 +1,599 @@
+# -*- coding: utf-8 -*-
+import os
+import gc
+import logging
+import re
+import sys
+
+# Configuração de Logs
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Variáveis Globais para Instâncias (Singleton)
+_WHISPER_INSTANCE = None
+_DEEPSEEK_INSTANCE = None  # Para análise de cortes
+_LLAMA_TITLE_INSTANCE = None  # Para geração de títulos
+
+# ==================== DETECÇÃO DE AMBIENTE ====================
+
+def is_running_in_colab():
+    """Detecta se o código está rodando no Google Colab."""
+    return 'COLAB_GPU' in os.environ or 'GCS_READ_BUFFERS' in os.environ
+
+def get_model_path(model_name):
+    """Retorna o caminho do modelo baseado no ambiente."""
+    if is_running_in_colab():
+        # Caminho Colab
+        colab_path = f'/content/{model_name}'
+        logger.info(f"[PATH] Ambiente Colab detectado. Usando: {colab_path}")
+        return colab_path
+    else:
+        # Caminho Local (Windows)
+        # core/ai_services/local_ai_service.py -> core -> AutoCortes -> models
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        local_path = os.path.join(base_dir, 'models', model_name)
+        logger.info(f"[PATH] Ambiente Local detectado. Usando: {local_path}")
+        return local_path
+
+# Caminhos dos Modelos (Dinâmicos)
+DEEPSEEK_PATH = get_model_path('DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf')
+LLAMA_TITLE_PATH = get_model_path('Llama-3.1-8B-Instruct-Q4_K_M.gguf')
+MODEL_SIZE_WHISPER = "medium"
+
+def _clean_memory():
+    """Força a limpeza da VRAM e RAM."""
+    gc.collect()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+    except ImportError:
+        pass
+    logger.info("[MEMORIA] Limpeza forçada concluída.")
+
+# ==================== WHISPER (STT) ====================
+
+def load_whisper_model():
+    global _WHISPER_INSTANCE
+    if _WHISPER_INSTANCE is None:
+        logger.info(f"[WHISPER] Carregando modelo '{MODEL_SIZE_WHISPER}'...")
+        try:
+            import whisper
+            import torch
+            
+            # Força uso da GPU se disponível
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            logger.info(f"[WHISPER] Usando device: {device}")
+            
+            _WHISPER_INSTANCE = whisper.load_model(MODEL_SIZE_WHISPER, device=device)
+            logger.info("[WHISPER] Modelo carregado com sucesso.")
+            
+            # Mostra VRAM usada
+            if torch.cuda.is_available():
+                vram_usada = torch.cuda.memory_allocated(0) / (1024**3)
+                logger.info(f"[WHISPER] VRAM usada: {vram_usada:.2f}GB")
+                
+        except ImportError:
+            logger.error("[WHISPER] Biblioteca 'openai-whisper' não instalada.")
+            _WHISPER_INSTANCE = None
+        except Exception as e:
+            logger.error(f"[WHISPER] Erro ao carregar: {e}")
+            _WHISPER_INSTANCE = None
+
+def unload_whisper_model():
+    global _WHISPER_INSTANCE
+    if _WHISPER_INSTANCE is not None:
+        logger.info("[WHISPER] Descarregando modelo...")
+        del _WHISPER_INSTANCE
+        _WHISPER_INSTANCE = None
+        _clean_memory()
+
+def transcribe_audio_local(audio_path):
+    """
+    Fluxo Serializado: Load -> Transcribe -> Unload
+    """
+    # Converte para caminho absoluto longo (resolve problema de caminhos curtos do Windows)
+    audio_path = os.path.abspath(audio_path)
+    
+    if not os.path.exists(audio_path):
+        logger.error(f"[WHISPER] Arquivo não encontrado: {audio_path}")
+        return None
+
+    try:
+        load_whisper_model()
+        if _WHISPER_INSTANCE is None:
+            return None
+
+        # Limpa cache CUDA antes de transcrever
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                logger.info(f"[WHISPER] Cache CUDA limpo. VRAM livre: {torch.cuda.memory_reserved(0) / 1024**3:.2f}GB")
+        except:
+            pass
+
+        logger.info(f"[WHISPER] Transcrevendo: {audio_path}")
+        logger.info(f"[WHISPER] Tamanho do arquivo: {os.path.getsize(audio_path) / 1024**2:.2f}MB")
+        
+        # Detecta FP16
+        try:
+            import torch
+            use_fp16 = torch.cuda.is_available()
+        except:
+            use_fp16 = False
+        
+        logger.info(f"[WHISPER] Iniciando transcrição (FP16={use_fp16})...")
+        result = _WHISPER_INSTANCE.transcribe(
+            audio_path, 
+            fp16=use_fp16,
+            verbose=False,
+            language='pt'
+        )
+        logger.info(f"[WHISPER] Transcrição concluída! Texto: {len(result.get('text', ''))} caracteres")
+        return result
+    except Exception as e:
+        logger.error(f"[WHISPER] Erro na transcrição: {e}")
+        import traceback
+        logger.error(f"[WHISPER] Traceback: {traceback.format_exc()}")
+        return None
+    finally:
+        unload_whisper_model()
+
+def transcribe_audio_batch(audio_path):
+    """
+    Transcreve áudio SEM descarregar o modelo.
+    Use esta função durante renderização em lote.
+    Chame manually_unload_whisper() ao final do lote.
+    """
+    # Converte para caminho absoluto longo
+    audio_path = os.path.abspath(audio_path)
+    
+    if not os.path.exists(audio_path):
+        logger.error(f"[WHISPER] Arquivo não encontrado: {audio_path}")
+        return None
+
+    try:
+        # Carrega o modelo se ainda não estiver carregado
+        if _WHISPER_INSTANCE is None:
+            load_whisper_model()
+        
+        if _WHISPER_INSTANCE is None:
+            return None
+
+        # Limpa cache CUDA antes de transcrever
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                logger.info(f"[WHISPER] Cache CUDA limpo. VRAM livre: {torch.cuda.memory_reserved(0) / 1024**3:.2f}GB")
+        except:
+            pass
+
+        logger.info(f"[WHISPER] Transcrevendo: {audio_path}")
+        logger.info(f"[WHISPER] Tamanho do arquivo: {os.path.getsize(audio_path) / 1024**2:.2f}MB")
+        
+        # Detecta FP16
+        try:
+            import torch
+            use_fp16 = torch.cuda.is_available()
+        except:
+            use_fp16 = False
+        
+        logger.info(f"[WHISPER] Iniciando transcrição (FP16={use_fp16})...")
+        result = _WHISPER_INSTANCE.transcribe(
+            audio_path, 
+            fp16=use_fp16,
+            verbose=False,  # Desativa logs verbosos do Whisper
+            language='pt'   # Define português para acelerar
+        )
+        logger.info(f"[WHISPER] Transcrição concluída! Texto: {len(result.get('text', ''))} caracteres")
+        return result
+    except Exception as e:
+        logger.error(f"[WHISPER] Erro na transcrição: {e}")
+        import traceback
+        logger.error(f"[WHISPER] Traceback: {traceback.format_exc()}")
+        return None
+    # NÃO descarrega o modelo aqui!
+
+def manually_unload_whisper():
+    """Descarrega manualmente o modelo Whisper após processamento em lote."""
+    unload_whisper_model()
+
+# ==================== DEEPSEEK R1 (LLM) ====================
+
+# ==================== DEEPSEEK (ANÁLISE DE CORTES) ====================
+
+def load_deepseek_model():
+    """Carrega DeepSeek R1 para análise de cortes virais."""
+    global _DEEPSEEK_INSTANCE
+    if _DEEPSEEK_INSTANCE is None:
+        if not os.path.exists(DEEPSEEK_PATH):
+            logger.error(f"[DEEPSEEK] Modelo não encontrado em: {DEEPSEEK_PATH}")
+            return
+        
+        logger.info("[DEEPSEEK] Carregando DeepSeek R1 para análise de cortes...")
+        try:
+            from llama_cpp import Llama
+            _DEEPSEEK_INSTANCE = Llama(
+                model_path=DEEPSEEK_PATH,
+                n_ctx=8192,
+                n_gpu_layers=0,  # CPU apenas
+                verbose=False
+            )
+            logger.info("[DEEPSEEK] Modelo carregado (CPU).")
+        except ImportError:
+            logger.error("[DEEPSEEK] Biblioteca 'llama-cpp-python' não instalada.")
+            _DEEPSEEK_INSTANCE = None
+        except Exception as e:
+            logger.error(f"[DEEPSEEK] Erro ao carregar: {e}")
+            _DEEPSEEK_INSTANCE = None
+
+def unload_deepseek_model():
+    """Descarrega DeepSeek R1."""
+    global _DEEPSEEK_INSTANCE
+    if _DEEPSEEK_INSTANCE is not None:
+        logger.info("[DEEPSEEK] Descarregando modelo...")
+        del _DEEPSEEK_INSTANCE
+        _DEEPSEEK_INSTANCE = None
+        _clean_memory()
+
+# ==================== LLAMA 3.1 (GERAÇÃO DE TÍTULOS) ====================
+
+def load_llama_title_model():
+    """Carrega Llama 3.1 para geração de títulos virais."""
+    global _LLAMA_TITLE_INSTANCE
+    if _LLAMA_TITLE_INSTANCE is None:
+        if not os.path.exists(LLAMA_TITLE_PATH):
+            logger.error(f"[LLAMA-TITLE] Modelo não encontrado em: {LLAMA_TITLE_PATH}")
+            return
+        
+        logger.info("[LLAMA-TITLE] Carregando Llama 3.1 para títulos...")
+        try:
+            from llama_cpp import Llama
+            _LLAMA_TITLE_INSTANCE = Llama(
+                model_path=LLAMA_TITLE_PATH,
+                n_ctx=2048,  # Menor contexto (só precisa para títulos)
+                n_gpu_layers=0,  # CPU apenas
+                verbose=False
+            )
+            logger.info("[LLAMA-TITLE] Modelo carregado (CPU).")
+        except ImportError:
+            logger.error("[LLAMA-TITLE] Biblioteca 'llama-cpp-python' não instalada.")
+            _LLAMA_TITLE_INSTANCE = None
+        except Exception as e:
+            logger.error(f"[LLAMA-TITLE] Erro ao carregar: {e}")
+            _LLAMA_TITLE_INSTANCE = None
+
+def unload_llama_title_model():
+    """Descarrega Llama 3.1."""
+    global _LLAMA_TITLE_INSTANCE
+    if _LLAMA_TITLE_INSTANCE is not None:
+        logger.info("[LLAMA-TITLE] Descarregando modelo...")
+        del _LLAMA_TITLE_INSTANCE
+        _LLAMA_TITLE_INSTANCE = None
+        _clean_memory()
+
+# ==================== FUNÇÕES DE COMPATIBILIDADE ====================
+
+def load_llama_model():
+    """Compatibilidade: carrega DeepSeek."""
+    load_deepseek_model()
+
+def unload_llama_model():
+    """Compatibilidade: descarrega DeepSeek."""
+    unload_deepseek_model()
+
+# Aliases para compatibilidade
+_LLAMA_INSTANCE = property(lambda self: _DEEPSEEK_INSTANCE)
+
+def manually_unload_llama():
+    """Descarrega DeepSeek manualmente."""
+    unload_deepseek_model()
+
+def generate_viral_title_local(anime_name, dialogue):
+    """Gera título viral baseado no diálogo."""
+    try:
+        load_llama_model()
+        if _LLAMA_INSTANCE is None:
+            return f"{anime_name} - CENA ÉPICA"
+
+        system_prompt = (
+            "Você é um especialista em marketing viral. Analise o diálogo e crie 3 títulos curtos (max 5 palavras) "
+            "e impactantes para TikTok. Use gatilhos de curiosidade. Responda apenas com os títulos."
+        )
+        user_prompt = f"Anime: {anime_name}\nDiálogo: \"{dialogue[:1000]}\"\n\nTítulos Virais:"
+        
+        output = _LLAMA_INSTANCE.create_chat_completion(
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+            max_tokens=100, temperature=0.7
+        )
+        
+        full_response = output['choices'][0]['message']['content'].strip()
+        titles = [t.strip().replace('"', '').replace('-', '').strip() for t in full_response.split('\n') if t.strip()]
+        return titles[0] if titles else f"{anime_name} - MOMENTO VIRAL"
+    except Exception as e:
+        logger.error(f"[DEEPSEEK] Erro título: {e}")
+        return f"{anime_name} - CENA DE AÇÃO"
+    finally:
+        unload_llama_model()
+
+# ==================== LIMPEZA DE RESPOSTA DEEPSEEK R1 ====================
+
+def clean_deepseek_response(raw_text):
+    """
+    Remove tags <think>...</think> e marcadores de raciocínio do DeepSeek R1.
+    
+    Args:
+        raw_text: Resposta crua do modelo
+        
+    Returns:
+        Texto limpo sem raciocínio
+    """
+    # 1. Remove o bloco de pensamento <think>...</think>
+    clean_text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL)
+    
+    # 2. Remove frases completas que começam com raciocínio (inglês e português)
+    # Padrão: qualquer frase que comece com palavras de raciocínio até o primeiro ponto final
+    reasoning_patterns = [
+        r'^Alright,.*?\.',
+        r'^All right,.*?\.',
+        r'^Ok,.*?\.',
+        r'^Okay,.*?\.',
+        r'^I need.*?\.',
+        r'^Let me.*?\.',
+        r'^First,.*?\.',
+        r'^The user.*?\.',
+        r'^Based on.*?\.',
+        r'^Here is.*?\.',
+        r'^Here\'s.*?\.',
+        r'^Eu preciso.*?\.',
+        r'^Vou.*?\.',
+        r'^Primeiro,.*?\.',
+        r'^O usuário.*?\.',
+    ]
+    
+    for pattern in reasoning_patterns:
+        clean_text = re.sub(pattern, '', clean_text, flags=re.IGNORECASE | re.DOTALL)
+    
+    # 3. Remove marcadores comuns
+    markers = [
+        '**Title:**', 'Title:', 'Título:', 'O título é:',
+        'Here is a title:', 'Aqui está um título:'
+    ]
+    for marker in markers:
+        clean_text = clean_text.replace(marker, '')
+    
+    # 4. Remove aspas extras e vírgulas iniciais
+    clean_text = clean_text.replace('"', '').replace("'", '').strip()
+    clean_text = clean_text.lstrip(',').strip()
+    
+    # 5. Pega apenas a primeira linha útil se houver quebra
+    if '\n' in clean_text:
+        lines = [l.strip() for l in clean_text.split('\n') if l.strip() and len(l.strip()) > 10]
+        clean_text = lines[0] if lines else ''
+    
+    return clean_text.strip()
+
+def generate_viral_title_batch(anime_name, dialogue):
+    """
+    Gera título viral usando Llama 3.1 (NÃO DeepSeek).
+    Llama 3.1 NÃO gera raciocínio, apenas o título direto.
+    """
+    try:
+        # Carrega Llama 3.1 se ainda não estiver carregado
+        if _LLAMA_TITLE_INSTANCE is None:
+            load_llama_title_model()
+        
+        if _LLAMA_TITLE_INSTANCE is None:
+            return f"{anime_name.upper()} CENA ÉPICA"
+
+        # Prompt direto para Llama 3.1 (não precisa ser tão explícito quanto DeepSeek)
+        system_prompt = "Você cria títulos virais para TikTok. Responda APENAS com o título em MAIÚSCULAS."
+        
+        user_prompt = (
+            f"Diálogo: \"{dialogue[:500]}\"\n\n"
+            f"Título viral (4-9 palavras, MAIÚSCULAS, português):"
+        )
+        
+        logger.info(f"[LLAMA-TITLE] Gerando título para {anime_name}...")
+        
+        # Gera título com Llama 3.1
+        output = _LLAMA_TITLE_INSTANCE.create_chat_completion(
+            messages=[
+                {"role": "system", "content": system_prompt}, 
+                {"role": "user", "content": user_prompt}
+            ],
+            max_tokens=50,
+            temperature=0.7,
+            stop=["\n", ".", "!"]
+        )
+        
+        raw_response = output['choices'][0]['message']['content'].strip()
+        logger.info(f"[LLAMA-TITLE] Resposta: {raw_response}")
+        
+        # Llama 3.1 não gera raciocínio, mas limpamos por segurança
+        titulo = raw_response.replace('"', '').replace("'", '').strip().upper()
+        
+        # Se vazio, usa fallback baseado no diálogo
+        if not titulo or len(titulo) < 10:
+            logger.warning("[LLAMA-TITLE] Título vazio. Usando fallback.")
+            palavras = dialogue[:300].upper().split()
+            stop_words = ['O', 'A', 'E', 'DE', 'DA', 'DO', 'EM', 'NA', 'NO', 'QUE', 'PARA', 'COM', 'POR', 'SEM', 'É', 'SÃO']
+            palavras_chave = [p for p in palavras if len(p) > 3 and p not in stop_words][:7]
+            if len(palavras_chave) >= 4:
+                titulo = " ".join(palavras_chave[:7])
+            else:
+                titulo = " ".join(palavras_chave) + f" EM {anime_name.upper()}"
+        
+        # Limita a 80 caracteres
+        if len(titulo) > 80:
+            titulo = titulo[:80].rsplit(' ', 1)[0].strip()
+        
+        # Valida número de palavras (4-9)
+        palavras = titulo.split()
+        if len(palavras) < 4:
+            titulo = f"{titulo} EM {anime_name.upper()}"
+        elif len(palavras) > 9:
+            titulo = ' '.join(palavras[:9])
+        
+        logger.info(f"[LLAMA-TITLE] Título final: {titulo}")
+        return titulo
+        
+    except Exception as e:
+        logger.error(f"[LLAMA-TITLE] Erro: {e}")
+        # Fallback
+        try:
+            palavras = dialogue[:300].upper().split()
+            stop_words = ['O', 'A', 'E', 'DE', 'DA', 'DO', 'EM', 'NA', 'NO', 'QUE', 'PARA', 'COM', 'POR', 'SEM', 'É', 'SÃO']
+            palavras_chave = [p for p in palavras if len(p) > 3 and p not in stop_words][:7]
+            if len(palavras_chave) >= 5:
+                return " ".join(palavras_chave[:7])
+            else:
+                return " ".join(palavras_chave) + f" EM {anime_name.upper()}"
+        except:
+            return f"{anime_name.upper()} CENA ÉPICA"
+
+# ==================== DEEPSEEK (ANÁLISE DE SEGMENTOS) ====================
+
+def manually_unload_llama():
+    """Descarrega manualmente o modelo DeepSeek após processamento em lote."""
+        else:
+            transcript_to_send = full_transcript_text
+        
+        # Atualiza prompt com transcrição limitada
+        user_prompt = (
+            f"Duração total do vídeo: {duration_total} segundos.\n\n"
+            f"Identifique 3-5 momentos virais (cada um com 60-180 segundos de duração).\n\n"
+            f"Roteiro (primeiros {len(transcript_to_send)} caracteres):\n{transcript_to_send}\n\n"
+            f"Retorne APENAS os timestamps no formato [INICIO-FIM], separados por vírgula:"
+        )
+        
+        logger.info(f"[DEEPSEEK] Processando {len(transcript_to_send)} caracteres...")
+        logger.info(f"[DEEPSEEK] Aguarde - DeepSeek analisando (pode levar 30-60s)...")
+        logger.info(f"[DEEPSEEK] Iniciando processamento em tempo real...")
+        
+        import time
+        start_time = time.time()
+        
+        # Com streaming para mostrar progresso
+        try:
+            logger.info(f"[DEEPSEEK] ⏳ Gerando resposta (streaming ativado)...")
+            
+            response_text = ""
+            token_count = 0
+            
+            # Cria stream
+            stream = _LLAMA_INSTANCE.create_chat_completion(
+                messages=[
+                    {"role": "system", "content": system_prompt}, 
+                    {"role": "user", "content": user_prompt}
+                ],
+                max_tokens=500,
+                temperature=0.3,
+                stream=True  # Ativa streaming
+            )
+            
+            # Processa tokens em tempo real
+            for chunk in stream:
+                if 'choices' in chunk and len(chunk['choices']) > 0:
+                    delta = chunk['choices'][0].get('delta', {})
+                    if 'content' in delta:
+                        token_text = delta['content']
+                        response_text += token_text
+                        token_count += 1
+                        
+                        # Log a cada 10 tokens
+                        if token_count % 10 == 0:
+                            elapsed = time.time() - start_time
+                            logger.info(f"[DEEPSEEK] 📝 {token_count} tokens gerados ({elapsed:.1f}s)...")
+            
+            elapsed_total = time.time() - start_time
+            logger.info(f"[DEEPSEEK] ✅ Resposta completa! {token_count} tokens em {elapsed_total:.1f}s")
+            
+            response = response_text.strip()
+            
+        except Exception as stream_error:
+            # Fallback para modo não-streaming se falhar
+            logger.warning(f"[DEEPSEEK] Streaming falhou: {stream_error}. Usando modo padrão...")
+            
+            output = _LLAMA_INSTANCE.create_chat_completion(
+                messages=[
+                    {"role": "system", "content": system_prompt}, 
+                    {"role": "user", "content": user_prompt}
+                ],
+                max_tokens=500,
+                temperature=0.3
+            )
+            
+            response = output['choices'][0]['message']['content'].strip()
+            elapsed_total = time.time() - start_time
+            logger.info(f"[DEEPSEEK] Resposta recebida em {elapsed_total:.1f}s")
+        
+        logger.info(f"[DEEPSEEK] Resposta completa recebida ({len(response)} caracteres)")
+        logger.info(f"[DEEPSEEK] Primeiros 500 caracteres: {response[:500]}...")
+        
+        # Parser robusto de timestamps
+        segments = []
+        matches = re.findall(r'\[(\d+)-(\d+)\]', response)
+        
+        if not matches:
+            logger.warning("[DEEPSEEK] Nenhum timestamp no formato [X-Y] encontrado. Tentando padrão alternativo...")
+            # Tenta padrão sem colchetes, mas apenas números grandes (timestamps reais)
+            all_matches = re.findall(r'(\d+)\s*-\s*(\d+)', response)
+            matches = [(s, e) for s, e in all_matches if int(e) - int(s) >= 30]
+        
+        if matches:
+            logger.info(f"[DEEPSEEK] {len(matches)} timestamps encontrados")
+            
+            for start, end in matches:
+                s, e = int(start), int(end)
+                duration = e - s
+                
+                # Valida duração
+                if duration >= 60 and duration <= 180:
+                    if s < duration_total:
+                        e = min(e, duration_total)
+                        segments.append({'start': s, 'end': e})
+                        logger.info(f"[DEEPSEEK] ✓ Segmento válido: {s}s-{e}s (duração: {duration}s)")
+                else:
+                    logger.warning(f"[DEEPSEEK] ✗ Segmento ignorado (duração {duration}s fora do range 60-180s): {s}-{e}")
+        else:
+            logger.warning("[DEEPSEEK] Nenhum timestamp válido encontrado na resposta")
+        
+        # Fallback automático se necessário
+        if not segments and duration_total > 60:
+            logger.info("[DEEPSEEK] Criando segmentos automáticos como fallback...")
+            num_segments = min(5, int(duration_total / 120))
+            segment_duration = duration_total / num_segments if num_segments > 0 else 120
+            
+            for i in range(num_segments):
+                start = int(i * segment_duration)
+                end = int(min(start + 120, duration_total))
+                if end - start >= 60:
+                    segments.append({'start': start, 'end': end})
+                    logger.info(f"[DEEPSEEK] ✓ Segmento automático: {start}s-{end}s")
+        
+        # Remove duplicatas (mesmo start e end)
+        unique_segments = []
+        seen = set()
+        for seg in segments:
+            key = (seg['start'], seg['end'])
+            if key not in seen:
+                seen.add(key)
+                unique_segments.append(seg)
+        
+        # Limita a 5 segmentos (pega os primeiros)
+        if len(unique_segments) > 5:
+            logger.warning(f"[DEEPSEEK] {len(unique_segments)} segmentos encontrados. Limitando a 5.")
+            unique_segments = unique_segments[:5]
+        
+        logger.info(f"[DEEPSEEK] Total de {len(unique_segments)} segmentos identificados")
+        return unique_segments
+    except Exception as e:
+        logger.error(f"[DEEPSEEK] Erro na análise de segmentos: {e}")
+        import traceback
+        logger.error(f"[DEEPSEEK] Traceback: {traceback.format_exc()}")
+        return []
+    # NÃO descarrega o modelo aqui - será reutilizado para gerar títulos

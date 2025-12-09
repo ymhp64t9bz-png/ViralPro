@@ -1,0 +1,216 @@
+# -*- coding: utf-8 -*-
+"""
+TITLE MASTER - Geração de Títulos com Qwen 2.5 14B
+===================================================
+Gera 3-5 variações de título usando análise narrativa
+Ortografia perfeita com LanguageTool automático
+"""
+
+import logging
+    LANGUAGETOOL_AVAILABLE = False
+    logger.warning("[TITLE MASTER] LanguageTool não disponível")
+
+def generate_title_variations(scene_text, narrative_analysis, anime_name="Anime", num_variations=3):
+    """
+    Gera múltiplas variações de título usando análise narrativa
+    
+    Args:
+        scene_text: Diálogo da cena específica
+        narrative_analysis: Análise narrativa do Qwen 2.5
+        anime_name: Nome do anime/série
+        num_variations: Número de variações (3-5)
+    
+    Returns:
+        [
+            "HERÓI ENFRENTA VILÃO PODEROSO",
+            "BATALHA ÉPICA REVELAÇÃO CHOCANTE",
+            "TRANSFORMAÇÃO INCRÍVEL MOMENTO VIRAL"
+        ]
+    """
+    logger.info(f"[TITLE MASTER] Gerando {num_variations} variações de título...")
+    
+    # Carrega modelo
+    load_llama_model()
+    if _LLAMA_INSTANCE is None:
+        logger.error("[TITLE MASTER] Modelo não disponível")
+        return [f"{anime_name.upper()} MOMENTO ÉPICO"]
+    
+    # Contexto narrativo
+    context = get_narrative_context(narrative_analysis)
+    
+    # Limita texto da cena
+    scene_sample = scene_text[:500]
+    
+    # Prompt otimizado para Qwen 2.5
+    system_prompt = f"""Você é um especialista em títulos virais para TikTok, Reels e Shorts.
+
+Crie títulos que:
+- Usem PORTUGUÊS BRASILEIRO perfeito
+- Tenham ORTOGRAFIA IMPECÁVEL
+- Contenham 4-9 PALAVRAS
+- Sejam em MAIÚSCULAS
+- Usem GATILHOS EMOCIONAIS
+- Sejam ÚNICOS e CRIATIVOS
+
+Gere EXATAMENTE {num_variations} variações diferentes."""
+    
+    user_prompt = f"""{context}
+
+Anime/Série: {anime_name}
+
+Diálogo da cena:
+"{scene_sample}"
+
+Gere {num_variations} títulos virais diferentes.
+Retorne APENAS os títulos, um por linha, sem numeração ou explicações."""
+    
+    try:
+        logger.info("[TITLE MASTER] Gerando variações...")
+        
+        response = _LLAMA_INSTANCE.create_chat_completion(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            max_tokens=150,
+            temperature=0.8,  # Mais criativo para variações
+            stop=["\n\n"]
+        )
+        
+        raw_response = response['choices'][0]['message']['content'].strip()
+        logger.info(f"[TITLE MASTER] Resposta: {raw_response[:200]}...")
+        
+        # Extrai títulos
+        titles = extract_titles(raw_response, num_variations)
+        
+        # Corrige ortografia de cada título
+        corrected_titles = []
+        for i, title in enumerate(titles):
+            # Limpa e converte para maiúsculas
+            title_clean = clean_llama_response(title).upper()
+            
+            # LanguageTool correção
+            if LANGUAGETOOL_AVAILABLE:
+                logger.info(f"[TITLE MASTER] Corrigindo título {i+1}...")
+                title_corrected = corrigir_titulo_completo(title_clean).upper()
+                
+                if title_corrected != title_clean:
+                    logger.info(f"[TITLE MASTER] ✅ Corrigido: {title_clean} → {title_corrected}")
+                else:
+                    logger.info(f"[TITLE MASTER] ✅ Já correto: {title_corrected}")
+                
+                corrected_titles.append(title_corrected)
+            else:
+                corrected_titles.append(title_clean)
+        
+        # Valida títulos
+        valid_titles = validate_titles(corrected_titles, anime_name)
+        
+        logger.info(f"[TITLE MASTER] ✅ {len(valid_titles)} títulos gerados")
+        for i, title in enumerate(valid_titles):
+            logger.info(f"[TITLE MASTER] Variação {i+1}: {title}")
+        
+        return valid_titles
+        
+    except Exception as e:
+        logger.error(f"[TITLE MASTER] Erro ao gerar títulos: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        
+        # Fallback
+        return [f"{anime_name.upper()} MOMENTO ÉPICO"]
+
+def extract_titles(raw_response, num_variations):
+    """
+    Extrai títulos da resposta do modelo
+    
+    Args:
+        raw_response: Resposta crua do modelo
+        num_variations: Número esperado de variações
+    
+    Returns:
+        Lista de títulos
+    """
+    # Remove numeração e marcadores
+    lines = raw_response.split('\n')
+    titles = []
+    
+    for line in lines:
+        # Remove numeração, marcadores, aspas
+        line_clean = line.strip()
+        line_clean = line_clean.lstrip('0123456789.-) ')
+        line_clean = line_clean.strip('"\'')
+        
+        # Ignora linhas vazias ou muito curtas
+        if line_clean and len(line_clean) > 10:
+            titles.append(line_clean)
+        
+        # Para quando tiver variações suficientes
+        if len(titles) >= num_variations:
+            break
+    
+    # Se não conseguiu extrair suficientes, retorna o que tem
+    return titles[:num_variations] if titles else ["TÍTULO VIRAL"]
+
+def validate_titles(titles, anime_name):
+    """
+    Valida e ajusta títulos
+    
+    Args:
+        titles: Lista de títulos
+        anime_name: Nome do anime
+    
+    Returns:
+        Lista de títulos validados
+    """
+    valid_titles = []
+    
+    for title in titles:
+        # Valida número de palavras (4-9)
+        words = title.split()
+        
+        if len(words) < 4:
+            # Adiciona nome do anime se muito curto
+            title = f"{title} EM {anime_name.upper()}"
+            words = title.split()
+        
+        if len(words) > 9:
+            # Trunca se muito longo
+            title = ' '.join(words[:9])
+        
+        # Limita comprimento total (80 caracteres)
+        if len(title) > 80:
+            title = title[:80].rsplit(' ', 1)[0].strip()
+        
+        # Remove pontuação final
+        title = title.rstrip('.,!?;:')
+        
+        valid_titles.append(title)
+    
+    return valid_titles
+
+def select_best_title(titles, criteria='first'):
+    """
+    Seleciona melhor título das variações
+    
+    Args:
+        titles: Lista de títulos
+        criteria: Critério de seleção ('first', 'longest', 'shortest', 'random')
+    
+    Returns:
+        str: Melhor título
+    """
+    if not titles:
+        return "TÍTULO VIRAL"
+    
+    if criteria == 'first':
+        return titles[0]
+    elif criteria == 'longest':
+        return max(titles, key=len)
+    elif criteria == 'shortest':
+        return min(titles, key=len)
+    elif criteria == 'random':
+        import random
+        return random.choice(titles)
+    else:
+        return titles[0]
