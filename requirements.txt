@@ -1,8 +1,44 @@
-runpod==1.3.0
-boto3==1.34.0
-b2sdk==1.24.0
-moviepy==1.0.3
-scenedetect[opencv]==0.6.2
-opencv-python-headless==4.8.1.78
-numpy==1.26.2
-requests==2.31.0
+# 💎 ViralPro Serverless v2.0 - Requirements
+# Todas as dependências necessárias para funcionamento completo
+
+# ==================== RUNPOD ====================
+runpod>=1.5.0
+
+# ==================== VIDEO PROCESSING ====================
+moviepy>=1.0.3
+opencv-python-headless>=4.8.1.78
+imageio>=2.31.0
+imageio-ffmpeg>=0.4.9
+
+# ==================== AI - FACE DETECTION ====================
+mediapipe>=0.10.0
+
+# ==================== AI - SPEECH RECOGNITION ====================
+faster-whisper>=0.10.0
+# Dependências do Whisper
+ctranslate2>=3.20.0
+
+# ==================== AI - TITLE GENERATION ====================
+google-generativeai>=0.3.0
+
+# ==================== IMAGE PROCESSING ====================
+Pillow>=10.1.0
+numpy>=1.24.0
+
+# ==================== AUDIO PROCESSING ====================
+pydub>=0.25.1
+soundfile>=0.12.1
+
+# ==================== BACKBLAZE B2 (S3 Compatible) ====================
+boto3>=1.29.0
+botocore>=1.32.0
+
+# ==================== HTTP & NETWORKING ====================
+requests>=2.31.0
+urllib3>=2.1.0
+
+# ==================== UTILITIES ====================
+tqdm>=4.66.0
+python-dotenv>=1.0.0
+colorama>=0.4.6
+typing-extensions>=4.8.0
