@@ -1,0 +1,86 @@
+# 💎 ViralPro Serverless v2.0 - Docker Ignore
+
+# ==================== DOCUMENTAÇÃO ====================
+*.md
+!README.md
+docs/
+*.txt
+!requirements.txt
+
+# ==================== PYTHON ====================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ==================== VIRTUAL ENVIRONMENTS ====================
+venv/
+ENV/
+env/
+.venv
+
+# ==================== IDE ====================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ==================== GIT ====================
+.git/
+.gitignore
+.gitattributes
+
+# ==================== DOCKER ====================
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# ==================== TESTES ====================
+tests/
+test_*.py
+*_test.py
+
+# ==================== LOGS ====================
+*.log
+logs/
+
+# ==================== TEMPORÁRIOS ====================
+temp/
+tmp/
+*.tmp
+.cache/
+
+# ==================== OUTPUTS ====================
+output/
+outputs/
+*.mp4
+*.avi
+*.mkv
+*.wav
+*.mp3
+*.jpg
+*.png
+
+# ==================== OUTROS ====================
+.env
+.env.local
+*.bak
+*.backup
