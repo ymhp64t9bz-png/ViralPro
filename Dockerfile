@@ -1,31 +1,76 @@
-FROM runpod/pytorch:2.0.1-py3.10-cuda11.8.0-devel-ubuntu22.04
+# 💎 ViralPro Serverless v2.0 - Dockerfile
+# Imagem otimizada para RunPod Serverless com GPU
 
-ENV DEBIAN_FRONTEND=noninteractive
+FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04
+
+# ==================== METADADOS ====================
+LABEL maintainer="ViralPro Team"
+LABEL description="ViralPro Serverless v2.0 - AI-Powered Viral Shorts Generator"
+LABEL version="2.0"
+
+# ==================== VARIÁVEIS DE AMBIENTE ====================
 ENV PYTHONUNBUFFERED=1
-ENV IMAGEMAGICK_BINARY=/usr/bin/convert
-ENV PYTHONPATH=/app
+ENV DEBIAN_FRONTEND=noninteractive
 
-WORKDIR /app
+# Diretórios de trabalho
+ENV APP_DIR=/app
+ENV TEMP_DIR=/tmp/viralpro
+ENV OUTPUT_DIR=/tmp/viralpro/output
 
-# 1. Dependências de Sistema
+# ==================== INSTALAÇÃO DE DEPENDÊNCIAS DO SISTEMA ====================
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg imagemagick libsndfile1 git wget curl libgl1 \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    # FFmpeg (essencial para MoviePy)
+    ffmpeg \
+    # ImageMagick (para TextClip do MoviePy)
+    imagemagick \
+    # OpenCV dependencies
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgl1 \
+    libglib2.0-0 \
+    # Audio processing
+    libsndfile1 \
+    # Networking
+    wget \
+    curl \
+    git \
+    # Fonts (para legendas)
+    fonts-dejavu-core \
+    fonts-liberation \
+    fonts-freefont-ttf \
+    # Cleanup
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-RUN sed -i 's/none/read,write/g' /etc/ImageMagick-6/policy.xml
+# Configura política do ImageMagick para permitir conversão de texto
+RUN sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' /etc/ImageMagick-6/policy.xml || true
 
-# 2. Python Deps (Force Reinstall para evitar cache corrompido)
-COPY requirements.txt /app/requirements.txt
-RUN python3 -m pip install --no-cache-dir --upgrade pip && \
-    python3 -m pip install --no-cache-dir --force-reinstall -r /app/requirements.txt
+# ==================== CRIAR DIRETÓRIOS ====================
+WORKDIR $APP_DIR
 
-# 3. Código Fonte
-COPY . /app/
+RUN mkdir -p \
+    $TEMP_DIR \
+    $OUTPUT_DIR
 
-# DEBUG: Auditoria de arquivos e pacotes
-RUN echo "--- FILES IN /app ---" && ls -la /app && \
-    echo "--- INSTALLED PACKAGES ---" && pip list
+# ==================== COPIAR REQUIREMENTS ====================
+COPY requirements.txt .
 
-RUN mkdir -p /app/output /app/temp
+# ==================== INSTALAR DEPENDÊNCIAS PYTHON ====================
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip cache purge
 
-CMD [ "python3", "-u", "/app/handler.py" ]
+# ==================== COPIAR CÓDIGO DA APLICAÇÃO ====================
+COPY handler.py /app/
+
+# ==================== HEALTHCHECK ====================
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python3 -c "import runpod; print('OK')" || exit 1
+
+# ==================== EXPOR PORTA ====================
+EXPOSE 8000
+
+# ==================== COMANDO DE INICIALIZAÇÃO ====================
+CMD ["python3", "-u", "handler.py"]
