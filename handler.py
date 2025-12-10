@@ -176,7 +176,7 @@ async def handler(job):
         url = raw_path
     else:
         path = normalize_path(raw_path)
-        url = generate_signed_url_s3v4(os.getenv("B2_BUCKET_NAME"), path)
+        url = generate_signed_url_s3v4(os.getenv("KortexClipAI"), path)
 
     if not url:
         return {"status": "error", "error": "erro ao gerar signed url"}
@@ -212,3 +212,4 @@ async def handler(job):
 
 if __name__ == "__main__":
     runpod.serverless.start({"handler": handler})
+
