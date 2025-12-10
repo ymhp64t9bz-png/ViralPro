@@ -22,9 +22,9 @@ logger = logging.getLogger("B2Storage")
 def get_b2_api():
     """Autentica no B2 usando variáveis de ambiente."""
     try:
-        key_id = os.getenv("B2_KEY_ID")
-        application_key = os.getenv("B2_APPLICATION_KEY")
-        bucket_name = os.getenv("B2_BUCKET_NAME")
+        key_id = os.getenv("68702c2cbfc6")
+        application_key = os.getenv("00506496bc1450b6722b672d9a43d00605f17eadd7")
+        bucket_name = os.getenv("KortexClipAI")
 
         if not all([key_id, application_key, bucket_name]):
             raise ValueError("Variáveis B2 não configuradas.")
