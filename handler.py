@@ -1,3 +1,24 @@
+import os
+from pathlib import Path
+
+# Path dos modelos no volume
+MODELS_PATH = Path(os.getenv("MODELS_PATH", "/workspace/models"))
+
+# Qwen
+QWEN_MODEL = MODELS_PATH / "qwen" / "qwen2.5-3b-instruct-q4_k_m.gguf"
+
+# Whisper
+os.environ["WHISPER_CACHE_DIR"] = str(MODELS_PATH / "whisper")
+
+# Bark
+os.environ["XDG_CACHE_HOME"] = str(MODELS_PATH / "bark")
+
+# Stable Diffusion
+SD_CACHE = MODELS_PATH / "stable_diffusion"
+
+# Mubert
+MUBERT_HELPER = MODELS_PATH / "music" / "mubert_helper.py"
+
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -664,3 +685,4 @@ if __name__ == "__main__":
     logger.info("=" * 60)
     
     runpod.serverless.start({"handler": handler})
+
