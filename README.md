@@ -1,381 +1,136 @@
-# 💎 ViralPro Serverless v2.0 - Documentação Completa
+# 🎯 ViralPro Serverless
 
-## 🎯 Visão Geral
-
-O **ViralPro Serverless v2.0** é a implementação **COMPLETA** de todas as funcionalidades do ViralPro local, otimizada para rodar no RunPod Serverless. Este sistema agora possui **TODAS** as capacidades da versão local, incluindo:
+Processamento automático de vídeos virais com Smart Crop (Face Detection) e Legendas Automáticas para RunPod Serverless.
 
 ---
 
-## ✅ Funcionalidades Implementadas
+## 📁 Arquivos
 
-### 🤖 **1. Smart Crop com Rastreamento Facial (MediaPipe)**
-
-#### **Funcionalidades**
-- ✅ **Detecção automática de rostos** em cada frame
-- ✅ **Rastreamento suave** (smooth cam) para evitar tremidas
-- ✅ **Crop inteligente 9:16** focado no rosto principal
-- ✅ **Fallback para crop centralizado** se não detectar rosto
-- ✅ **Análise de frames amostrais** (1 frame a cada 2s) para performance
-
-#### **Como Funciona**
-1. MediaPipe analisa frames do vídeo
-2. Detecta posição do rosto principal
-3. Calcula média das posições (smooth cam)
-4. Aplica crop 9:16 centralizado no rosto
-5. Redimensiona para 1080x1920 final
-
----
-
-### 🎙️ **2. Legendas Automáticas (Faster-Whisper)**
-
-#### **Funcionalidades**
-- ✅ **Transcrição automática** com Whisper
-- ✅ **GPU acceleration** (CUDA) + fallback CPU
-- ✅ **Legendas sincronizadas** com timestamps precisos
-- ✅ **Estilo futurista clean** (texto branco + sombra sutil)
-- ✅ **Posicionamento otimizado** (parte inferior do vídeo)
-
-#### **Configurações**
-- **Modelo:** medium (melhor qualidade/velocidade)
-- **Idioma:** Português (pt)
-- **Beam size:** 5 (qualidade)
-- **Compute type:** float16 (GPU) ou int8 (CPU)
-
----
-
-### 🔥 **3. Títulos Virais (Gemini API)**
-
-#### **Funcionalidades**
-- ✅ **Geração automática** de títulos virais
-- ✅ **Predição temporal** baseada no índice da cena
-- ✅ **Otimização por plataforma** (TikTok, Shorts, Instagram)
-- ✅ **Títulos em MAIÚSCULAS** para impacto
-- ✅ **Máximo 6 palavras** para viralidade
-- ✅ **Fallback inteligente** se Gemini falhar
-
-#### **Plataformas Suportadas**
-- **TikTok:** Títulos ultra virais (5 palavras)
-- **YouTube Shorts:** Títulos explosivos (5 palavras)
-- **Instagram Reels:** Títulos chamativos (6 palavras)
-- **Geral:** Títulos impactantes (6 palavras)
-
-#### **Exemplos de Títulos**
 ```
-VOCÊ NÃO VAI ACREDITAR!
-MOMENTO ÉPICO DO FILME!
-CENA MAIS INCRÍVEL!
-OLHA O QUE ACONTECEU!
+ViralPro/
+├── Dockerfile          # Build sem HEALTHCHECK (corrigido para evitar crash)
+├── handler.py          # Handler completo (Smart Crop + Faster-Whisper + B2)
+└── requirements.txt    # Dependências (MediaPipe, Faster-Whisper, etc.)
 ```
 
 ---
 
-### 🎬 **4. Renderização Profissional**
+## 🚀 Deploy no RunPod
 
-#### **NVENC (GPU) - Principal**
-- ✅ **Codec:** h264_nvenc
-- ✅ **Bitrate:** 6000k (alta qualidade)
-- ✅ **Preset:** p6 (qualidade máxima)
-- ✅ **Threads:** 8
-- ✅ **Velocidade:** 5-10x mais rápido que CPU
+### 1. Criar Repositório no GitHub
 
-#### **libx264 (CPU) - Fallback**
-- ✅ **Codec:** libx264
-- ✅ **Preset:** medium (qualidade)
-- ✅ **Threads:** 4
-- ✅ **Ativação automática** se NVENC falhar
+Se ainda não existe, crie um repositório:
+- Nome: `ViralPro`
+- Visibilidade: Public ou Private
+
+### 2. Fazer Upload dos Arquivos
+
+**Opção A: Via GitHub Web Interface**
+1. Acesse seu repositório do ViralPro
+2. Upload os 3 arquivos da pasta `ViralPro`:
+   - `Dockerfile`
+   - `handler.py`
+   - `requirements.txt`
+
+**Opção B: Via Git**
+```bash
+git add Dockerfile handler.py requirements.txt
+git commit -m "fix: serverless deployment with smart crop and whisper"
+git push origin main
+```
+
+### 3. Configurar Endpoint no RunPod
+
+1. **RunPod Console** → **Serverless** → **New Endpoint**
+2. **Configurações:**
+   - **Name:** ViralPro
+   - **Repository:** `https://github.com/SEU_USUARIO/ViralPro.git`
+   - **Branch:** `main`
+   - **Dockerfile Path:** `Dockerfile`
+   - **Container Disk:** 20 GB (Modelos de IA ocupam espaço)
+   - **GPU:** RTX 3090 ou superior (Recomendado para Whisper + MediaPipe)
+
+3. **Environment Variables** (opcional para Upload):
+   ```
+   B2_KEY_ID=your_key_id
+   B2_APP_KEY=your_app_key
+   B2_BUCKET_NAME=your_bucket_name
+   B2_ENDPOINT=https://s3.us-east-005.backblazeb2.com
+   ```
+
+4. **Deploy**
 
 ---
 
-### ☁️ **5. Integração com Backblaze B2**
+## 🧪 Testar
 
-#### **Upload Automático**
-- ✅ **Upload de vídeos processados** para B2
-- ✅ **Geração de Signed URLs** (válidas por 7 dias)
-- ✅ **Organização em pastas** (`viralpro/`)
-- ✅ **Nomes únicos** com timestamp
-
-#### **Benefícios**
-- ✅ **Armazenamento ilimitado** (pago por uso)
-- ✅ **URLs públicas** para compartilhamento
-- ✅ **Backup automático** de todos os vídeos
-
----
-
-### 🧹 **6. Gerenciamento de Recursos**
-
-#### **Limpeza Automática**
-- ✅ **Limpeza de RAM** após processamento
-- ✅ **Remoção de arquivos temporários**
-- ✅ **Liberação de recursos** do MoviePy
-- ✅ **Garbage collection** agressivo
-
----
-
-## 📋 Formato de Input
-
-### **Exemplo Completo**
-
+### Teste Básico (Healthcheck)
 ```json
 {
   "input": {
-    "video_url": "https://example.com/podcast.mp4",
-    "num_clips": 5,
-    "clip_duration": 60,
-    "start_offset": 120,
-    "platform": "tiktok",
-    "enable_captions": true,
-    "enable_titles": true,
-    "caption_color": "#FFD700",
-    "font": "Arial"
+    "mode": "test"
   }
 }
 ```
 
-### **Parâmetros**
-
-| Parâmetro | Tipo | Padrão | Descrição |
-|-----------|------|--------|-----------|
-| `video_url` | string | **obrigatório** | URL do vídeo para processar |
-| `num_clips` | int | 3 | Número de clips a gerar |
-| `clip_duration` | int | 60 | Duração de cada clip em segundos |
-| `start_offset` | int | 0 | Offset inicial em segundos |
-| `platform` | string | "tiktok" | Plataforma alvo (tiktok, shorts, instagram, geral) |
-| `enable_captions` | bool | true | Ativar legendas automáticas |
-| `enable_titles` | bool | true | Ativar títulos virais |
-| `caption_color` | string | "#FFD700" | Cor das legendas (hex) |
-| `font` | string | "Arial" | Fonte para legendas e títulos |
-
----
-
-## 📤 Formato de Output
-
-### **Sucesso**
-
+**Resposta esperada:**
 ```json
 {
   "status": "success",
-  "clips": [
-    {
-      "clip_index": 1,
-      "url": "https://s3.us-east-005.backblazeb2.com/...",
-      "b2_key": "viralpro/viral_1_1702345678.mp4",
-      "start": 120,
-      "end": 180
-    },
-    {
-      "clip_index": 2,
-      "url": "https://s3.us-east-005.backblazeb2.com/...",
-      "b2_key": "viralpro/viral_2_1702345679.mp4",
-      "start": 180,
-      "end": 240
-    }
-  ],
-  "total_clips": 2,
-  "config": {
-    "filename": "input_1702345678.mp4",
-    "platform": "tiktok",
-    "clip_duration": 60,
-    "enable_captions": true,
-    "enable_titles": true,
-    "caption_color": "#FFD700",
-    "font": "Arial"
+  "message": "ViralPro worker funcionando!",
+  "features": {
+    "moviepy": true,
+    "mediapipe": true,
+    "whisper": true,
+    "b2": true
+    ...
   }
 }
 ```
 
-### **Erro**
-
+### Processar Vídeo
 ```json
 {
-  "status": "error",
-  "error": "Descrição do erro",
-  "traceback": "Stack trace completo..."
+  "input": {
+    "video_url": "https://link-para-seu-video.mp4",
+    "num_clips": 3,
+    "clip_duration": 60,
+    "start_min": 0,
+    "add_subtitles": true
+  }
 }
 ```
 
 ---
 
-## 🚀 Fluxo de Processamento
+## 🎯 Funcionalidades
 
-### **Pipeline Completo**
+### ✅ Smart Crop (9:16)
+- **Face Detection:** Usa MediaPipe para identificar rostos.
+- **Enquadramento Dinâmico:** Mantém o rosto centralizado no vídeo vertical.
+- **Fallback:** Crop centralizado se nenhum rosto for detectado.
 
-```
-1. Recebe input do usuário
-   ↓
-2. Download do vídeo
-   a. Baixa de video_url
-   b. Salva temporariamente
-   ↓
-3. Para cada clip (num_clips):
-   ↓
-   a. Extração do subclipe
-      - Calcula start/end baseado em offset
-      - Extrai subclipe com MoviePy
-   ↓
-   b. Smart Crop (MediaPipe)
-      - Detecta rostos em frames amostrais
-      - Calcula posição média (smooth cam)
-      - Aplica crop 9:16 focado no rosto
-      - Redimensiona para 1080x1920
-   ↓
-   c. Transcrição (Whisper)
-      - Extrai áudio temporário
-      - Transcreve com Faster-Whisper (GPU/CPU)
-      - Gera timestamps precisos
-   ↓
-   d. Legendas (MoviePy)
-      - Cria clips de texto com sombra
-      - Posiciona na parte inferior
-      - Sincroniza com timestamps
-   ↓
-   e. Título Viral (Gemini)
-      - Limpa nome do arquivo
-      - Calcula tempo da cena
-      - Gera título com Gemini API
-      - Aplica fallback se falhar
-      - Cria overlay no topo
-   ↓
-   f. Composição Final
-      - Combina vídeo + legendas + título
-      - Cria CompositeVideoClip
-   ↓
-   g. Renderização (NVENC/CPU)
-      - Tenta NVENC (GPU) primeiro
-      - Fallback para libx264 (CPU)
-      - Salva MP4 final
-   ↓
-   h. Upload B2
-      - Envia para bucket
-      - Gera signed URL (7 dias)
-      - Remove arquivo local
-   ↓
-4. Limpa recursos
-   a. Remove vídeo de entrada
-   b. Libera memória (gc.collect)
-   ↓
-5. Retorna resultado
-   - Lista de clips com URLs
-   - Configuração usada
-```
+### ✅ Legendas Automáticas
+- **Faster-Whisper:** Transcrição ultra-rápida via GPU.
+- **Estilo:** Legendas centralizadas na parte inferior com fundo translúcido.
+- **Sincronia:** Timing preciso baseado no áudio.
+
+### ✅ Upload Automático (B2)
+- Upload dos cortes gerados para Backblaze B2.
+- Geração de URLs assinadas.
 
 ---
 
-## ⚙️ Variáveis de Ambiente Necessárias
+## 🔧 Troubleshooting
 
-```bash
-# Backblaze B2
-B2_KEY_ID=68702c2cbfc6
-B2_APP_KEY=00506496bc1450b6722b672d9a43d00605f17eadd7
-B2_ENDPOINT=https://s3.us-east-005.backblazeb2.com
-B2_BUCKET_NAME=autocortes-storage
+### Worker dá exit code 1
+- **Causa:** Healthcheck do Docker nativo conflitando com o RunPod.
+- **Solução:** O Dockerfile fornecido já removeu o HEALTHCHECK problemático.
 
-# Gemini API (para títulos virais)
-GEMINI_API_KEY=sua_api_key_aqui
-```
+### Erro de Memória (OOM)
+- O modelo Whisper e o processamento de vídeo consomem RAM.
+- **Solução:** Use um worker com pelo menos 24GB de VRAM/RAM (RTX 3090/4090).
 
 ---
 
-## 📊 Performance Esperada
-
-### **Tempo de Processamento (por clip de 60s)**
-
-| Etapa | Tempo Médio (GPU) | Tempo Médio (CPU) |
-|-------|-------------------|-------------------|
-| Download | 5-15s | 5-15s |
-| Smart Crop (MediaPipe) | 10-20s | 15-30s |
-| Transcrição (Whisper) | 5-10s | 20-40s |
-| Legendas (MoviePy) | 2-5s | 2-5s |
-| Título (Gemini) | 2-5s | 2-5s |
-| Renderização (NVENC) | 10-20s | 60-120s |
-| Upload B2 | 10-30s | 10-30s |
-| **Total** | **44-105s** | **114-247s** |
-
-### **Recursos Utilizados**
-
-- **RAM:** 4-8 GB
-- **VRAM:** 2-4 GB (com GPU)
-- **CPU:** 4-8 cores
-- **Disco:** 1-2 GB temporário
-
----
-
-## 🔍 Debugging e Logs
-
-O sistema possui **logging detalhado** em todas as etapas:
-
-```
-[INFO] ============================================================
-[INFO] 💎 ViralPro Serverless v2.0 - Iniciando
-[INFO] 📺 URL: https://example.com/video.mp4
-[INFO] 🔢 Clips: 3
-[INFO] ⏱️ Duração: 60s
-[INFO] ============================================================
-[INFO] 📥 Baixando vídeo...
-[INFO] ✅ Vídeo baixado: /tmp/viralpro/input_123.mp4
-[INFO] 🎬 Processando clip 1...
-[INFO] 🤖 Aplicando Smart Crop...
-[INFO] 🎙️ Transcrevendo áudio...
-[INFO] ✅ 15 legendas geradas
-[INFO] 🔥 Gerando título viral...
-[INFO] ✅ Título gerado: MOMENTO ÉPICO DO FILME!
-[INFO] 🎥 Renderizando vídeo...
-[INFO] ✅ Renderizado com NVENC (GPU)
-[INFO] 📤 Uploading para B2: viralpro/viral_1_123.mp4
-[INFO] ✅ Upload completo
-[INFO] ============================================================
-[INFO] ✅ ViralPro Serverless - Concluído
-[INFO] 📊 3 clips gerados
-[INFO] ============================================================
-```
-
----
-
-## ✅ Checklist de Funcionalidades
-
-### **Processamento de Vídeo**
-- [x] Download de vídeo via URL
-- [x] Extração de subclipes
-- [x] Smart Crop 9:16 (MediaPipe)
-- [x] Rastreamento facial
-- [x] Redimensionamento para 1080x1920
-
-### **IA e Automação**
-- [x] Transcrição com Whisper (GPU/CPU)
-- [x] Legendas automáticas sincronizadas
-- [x] Títulos virais com Gemini
-- [x] Predição temporal de cenas
-- [x] Fallbacks inteligentes
-
-### **Renderização**
-- [x] NVENC (GPU) - principal
-- [x] libx264 (CPU) - fallback
-- [x] Alta qualidade (6000k bitrate)
-- [x] Formato MP4 otimizado
-
-### **Storage e Upload**
-- [x] Upload para Backblaze B2
-- [x] Signed URLs (7 dias)
-- [x] Organização em pastas
-- [x] Limpeza de temporários
-
-### **Gerenciamento de Recursos**
-- [x] Limpeza de RAM
-- [x] Garbage collection
-- [x] Logging detalhado
-- [x] Tratamento de erros
-
----
-
-## 🎉 Conclusão
-
-O **ViralPro Serverless v2.0** agora possui **100% das funcionalidades** da versão local, incluindo:
-
-1. ✅ **Smart Crop com MediaPipe**
-2. ✅ **Legendas automáticas com Whisper**
-3. ✅ **Títulos virais com Gemini**
-4. ✅ **Renderização NVENC/CPU**
-5. ✅ **Upload automático para B2**
-6. ✅ **Processamento em lote**
-7. ✅ **Gerenciamento de recursos otimizado**
-
-**O sistema está pronto para produção!** 🚀
+**Desenvolvido para RunPod Serverless** 🎯
