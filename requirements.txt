@@ -1,53 +1,34 @@
-# 🎬 ViralPro - Requirements
-# Dependências para edição viral (legendas + face tracking)
+# 🎯 ViralPro - Requirements Completo
+# Todas as dependências necessárias
 
 # ==================== RUNPOD ====================
 runpod>=1.5.0
-
-# ==================== AI - WHISPER (Transcrição) ====================
-openai-whisper>=20231117
-tiktoken>=0.5.0
-numba
-
-# ==================== AI - FACE DETECTION ====================
-face-recognition>=1.3.0
-dlib>=19.24.0
-opencv-python-headless==4.10.0.84
-
-# ==================== AI - BACKGROUND REMOVAL ====================
-rembg>=2.0.50
-onnxruntime>=1.16.0
-
-# ==================== AI - OBJECT DETECTION ====================
-ultralytics>=8.0.0  # YOLOv8
 
 # ==================== VIDEO PROCESSING ====================
 moviepy==1.0.3
 imageio==2.34.0
 imageio-ffmpeg==0.5.1
-decorator==5.1.1
 proglog==0.1.10
-ffmpeg-python==0.2.0
 
-# ==================== IMAGE PROCESSING (PIL) ====================
+# ==================== IMAGE PROCESSING ====================
 Pillow>=10.1.0
 numpy==1.26.4
-scikit-image>=0.22.0
+opencv-python-headless==4.8.1.78
 
 # ==================== AUDIO PROCESSING ====================
 pydub>=0.25.1
 soundfile>=0.12.1
 
-# ==================== BACKBLAZE B2 (S3 Compatible) ====================
+# ==================== AI - FACE DETECTION ====================
+mediapipe>=0.10.0
+
+# ==================== AI - TRANSCRIPTION ====================
+faster-whisper>=0.10.0
+
+# ==================== BACKBLAZE B2 ====================
 boto3>=1.29.0
 botocore>=1.32.0
 
-# ==================== HTTP & NETWORKING ====================
-requests>=2.31.0
-urllib3>=2.1.0
-
 # ==================== UTILITIES ====================
+requests>=2.31.0
 tqdm>=4.66.0
-python-dotenv>=1.0.0
-colorama>=0.4.6
-typing-extensions>=4.8.0
