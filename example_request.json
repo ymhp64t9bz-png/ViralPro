@@ -1,0 +1,41 @@
+{
+  "input": {
+    "video_url": "https://seu-servidor.com/video.mp4",
+    
+    "contentName": "Podcast EP 01",
+    
+    "cutDuration": {
+      "min": 30,
+      "max": 90
+    },
+    
+    "maxCuts": 10,
+    
+    "antiShadowban": {
+      "enabled": true,
+      "gamma": true,
+      "gamma_value": 1.02,
+      "color_shift": true,
+      "color_value": 1.01
+    },
+    
+    "subtitleStyle": {
+      "font_size": 60,
+      "font_color": "#FFFFFF",
+      "stroke_color": "#000000",
+      "stroke_width": 3,
+      "highlight_color": "#FFFF00",
+      "position_y": 0.75,
+      "max_words_per_line": 4,
+      "animation": "highlight"
+    },
+    
+    "faceTracking": {
+      "enabled": true,
+      "smoothing": 5,
+      "sample_rate": 0.5
+    },
+    
+    "debug": false
+  }
+}
